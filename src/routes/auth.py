@@ -22,15 +22,15 @@ def login():
         
         # Store user in session
         session['user_id'] = user.id
-        session['user_role'] = user.role
+        session['is_admin'] = user.is_admin
         
         # Debug logging
-        print(f"Login successful - User ID: {user.id}, Role: {user.role}")
+        print(f"Login successful - User ID: {user.id}, Is Admin: {user.is_admin}")
         print(f"Session data: {dict(session)}")
         
-        # Get shop data if user is shop_user
+        # Get shop data if user is not admin
         shop = None
-        if user.role == 'shop_user':
+        if not user.is_admin:
             shop = Shop.get_by_user_id(user.id)
         
         return jsonify({
@@ -65,7 +65,7 @@ def register_shop():
             'username': data['username'],
             'email': data['email'],
             'password': data['password'],
-            'role': 'shop_user'
+            'is_admin': False
         }
         user = User.create(user_data)
         
@@ -101,10 +101,10 @@ def get_current_user():
     """Get current user information"""
     try:
         user_id = session.get('user_id')
-        user_role = session.get('user_role')
+        is_admin = session.get('is_admin')
         
         # Debug logging
-        print(f"/me endpoint - User ID: {user_id}, Role: {user_role}")
+        print(f"/me endpoint - User ID: {user_id}, Is Admin: {is_admin}")
         print(f"Session data in /me: {dict(session)}")
         
         if not user_id:
@@ -115,9 +115,9 @@ def get_current_user():
             session.clear()
             return jsonify({'error': 'User not found'}), 401
         
-        # Get shop data if user is shop_user
+        # Get shop data if user is not admin
         shop = None
-        if user.role == 'shop_user':
+        if not user.is_admin:
             shop = Shop.get_by_user_id(user.id)
         
         return jsonify({
@@ -173,13 +173,13 @@ def require_admin(f):
     """Decorator to require admin role"""
     def decorated_function(*args, **kwargs):
         user_id = session.get('user_id')
-        user_role = session.get('user_role')
+        is_admin = session.get('is_admin')
         
         # Debug logging
-        print(f"Admin check - User ID: {user_id}, Role: {user_role}")
+        print(f"Admin check - User ID: {user_id}, Is Admin: {is_admin}")
         print(f"Session data in admin check: {dict(session)}")
         
-        if not user_id or user_role != 'admin':
+        if not user_id or not is_admin:
             return jsonify({'error': 'Admin access required'}), 403
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
@@ -189,8 +189,8 @@ def require_shop_user(f):
     """Decorator to require shop user role"""
     def decorated_function(*args, **kwargs):
         user_id = session.get('user_id')
-        user_role = session.get('user_role')
-        if not user_id or user_role != 'shop_user':
+        is_admin = session.get('is_admin')
+        if not user_id or is_admin:
             return jsonify({'error': 'Shop user access required'}), 403
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
