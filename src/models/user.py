@@ -1,4 +1,4 @@
-import psycopg2
+import psycopg
 import bcrypt
 from datetime import datetime
 from src.database_postgresql import get_db_connection
@@ -38,10 +38,11 @@ class User:
             user_id = cursor.fetchone()[0]
             conn.commit()
             return cls.get_by_id(user_id)
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     @classmethod
@@ -55,9 +56,10 @@ class User:
             if row:
                 return cls(*row)
             return None
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     @classmethod
@@ -71,9 +73,10 @@ class User:
             if row:
                 return cls(*row)
             return None
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     @classmethod
@@ -87,9 +90,10 @@ class User:
             if row:
                 return cls(*row)
             return None
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     @classmethod
@@ -116,9 +120,10 @@ class User:
         try:
             cursor.execute('SELECT COUNT(*) FROM users')
             return cursor.fetchone()[0]
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     @classmethod
@@ -158,10 +163,11 @@ class User:
             ''', (password_hash, datetime.now(), self.id))
             conn.commit()
             self.password_hash = password_hash
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     def update(self, user_data):
@@ -182,10 +188,11 @@ class User:
             conn.commit()
             self.username = user_data.get('username', self.username)
             self.email = user_data.get('email', self.email)
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
+            cursor.close()
             conn.close()
 
     def to_dict(self):

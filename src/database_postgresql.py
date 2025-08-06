@@ -1,4 +1,4 @@
-import psycopg2
+import psycopg
 import os
 from psycopg2.extras import RealDictCursor
 
@@ -6,8 +6,8 @@ from psycopg2.extras import RealDictCursor
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://billing_user:20NF3KoFSG30mjUwbAuup9v2XPSncKOm@dpg-d276jfc9c44c7386hkrg-a.oregon-postgres.render.com/billing_db_us32')
 
 def get_db_connection():
-    """Get PostgreSQL database connection"""
-    return psycopg2.connect(DATABASE_URL)
+    """Get PostgreSQL database connection (psycopg3)"""
+    return psycopg.connect(DATABASE_URL)
 
 def init_db():
     """Initialize database with tables"""
