@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from datetime import datetime
 from src.database_postgresql import get_db_connection
 
@@ -28,7 +28,7 @@ class PaymentVerification:
                 INSERT INTO payment_verifications (
                     shop_id, amount, payment_method, reference_number, 
                     payment_proof, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 shop_id, payment_data.get('amount'), payment_data.get('payment_method'),
                 payment_data.get('reference_number'), payment_data.get('payment_proof'),
@@ -40,7 +40,7 @@ class PaymentVerification:
             
             return cls.get_by_id(verification_id)
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -53,14 +53,14 @@ class PaymentVerification:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM payment_verifications WHERE id = ?', (verification_id,))
+            cursor.execute('SELECT * FROM payment_verifications WHERE id = %s', (verification_id,))
             row = cursor.fetchone()
             
             if row:
                 return cls(*row)
             return None
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -74,14 +74,14 @@ class PaymentVerification:
         try:
             cursor.execute('''
                 SELECT * FROM payment_verifications 
-                WHERE shop_id = ? 
+                WHERE shop_id = %s 
                 ORDER BY created_at DESC
             ''', (shop_id,))
             
             rows = cursor.fetchall()
             return [cls(*row) for row in rows]
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -99,16 +99,16 @@ class PaymentVerification:
                 cursor.execute('''
                     SELECT pv.*, s.shop_name FROM payment_verifications pv
                     LEFT JOIN shops s ON pv.shop_id = s.id
-                    WHERE pv.status = ?
+                    WHERE pv.status = %s
                     ORDER BY pv.created_at DESC
-                    LIMIT ? OFFSET ?
+                    LIMIT %s OFFSET %s
                 ''', (status, limit, offset))
             else:
                 cursor.execute('''
                     SELECT pv.*, s.shop_name FROM payment_verifications pv
                     LEFT JOIN shops s ON pv.shop_id = s.id
                     ORDER BY pv.created_at DESC
-                    LIMIT ? OFFSET ?
+                    LIMIT %s OFFSET %s
                 ''', (limit, offset))
             
             rows = cursor.fetchall()
@@ -121,7 +121,7 @@ class PaymentVerification:
             
             return verifications
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -133,10 +133,10 @@ class PaymentVerification:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT COUNT(*) FROM payment_verifications WHERE status = ?', ('pending',))
+            cursor.execute('SELECT COUNT(*) FROM payment_verifications WHERE status = %s', ('pending',))
             return cursor.fetchone()[0]
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -148,11 +148,11 @@ class PaymentVerification:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT SUM(amount) FROM payment_verifications WHERE status = ?', ('verified',))
+            cursor.execute('SELECT SUM(amount) FROM payment_verifications WHERE status = %s', ('verified',))
             result = cursor.fetchone()[0]
             return result if result else 0
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -165,15 +165,15 @@ class PaymentVerification:
         try:
             cursor.execute('''
                 UPDATE payment_verifications 
-                SET status = 'verified', admin_notes = ?, updated_at = ?
-                WHERE id = ?
+                SET status = %s, admin_notes = %s, updated_at = %s
+                WHERE id = %s
             ''', (admin_notes, datetime.now(), self.id))
             
             conn.commit()
             self.status = 'verified'
             self.admin_notes = admin_notes
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -187,15 +187,15 @@ class PaymentVerification:
         try:
             cursor.execute('''
                 UPDATE payment_verifications 
-                SET status = 'rejected', admin_notes = ?, updated_at = ?
-                WHERE id = ?
+                SET status = %s, admin_notes = %s, updated_at = %s
+                WHERE id = %s
             ''', (admin_notes, datetime.now(), self.id))
             
             conn.commit()
             self.status = 'rejected'
             self.admin_notes = admin_notes
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -252,7 +252,7 @@ class InvoicePayment:
                 INSERT INTO invoice_payments (
                     invoice_id, amount, payment_method, payment_date,
                     reference_number, notes, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 invoice_id, payment_data.get('amount'), payment_data.get('payment_method'),
                 payment_data.get('payment_date'), payment_data.get('reference_number'),
@@ -264,7 +264,7 @@ class InvoicePayment:
             
             return cls.get_by_id(payment_id)
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -277,14 +277,14 @@ class InvoicePayment:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM invoice_payments WHERE id = ?', (payment_id,))
+            cursor.execute('SELECT * FROM invoice_payments WHERE id = %s', (payment_id,))
             row = cursor.fetchone()
             
             if row:
                 return cls(*row)
             return None
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -298,14 +298,14 @@ class InvoicePayment:
         try:
             cursor.execute('''
                 SELECT * FROM invoice_payments 
-                WHERE invoice_id = ? 
+                WHERE invoice_id = %s 
                 ORDER BY payment_date DESC
             ''', (invoice_id,))
             
             rows = cursor.fetchall()
             return [cls(*row) for row in rows]
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()

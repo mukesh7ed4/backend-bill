@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from datetime import datetime
 from src.database_postgresql import get_db_connection
 
@@ -35,7 +35,7 @@ class Shop:
                     user_id, shop_name, owner_name, phone, address, city, state, 
                     pincode, gst_number, license_number, is_active, subscription_status,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 user_id, shop_data.get('shop_name'), shop_data.get('owner_name'),
                 shop_data.get('phone'), shop_data.get('address'), shop_data.get('city'),
@@ -49,7 +49,7 @@ class Shop:
             
             return cls.get_by_id(shop_id)
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -62,14 +62,14 @@ class Shop:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM shops WHERE id = ?', (shop_id,))
+            cursor.execute('SELECT * FROM shops WHERE id = %s', (shop_id,))
             row = cursor.fetchone()
             
             if row:
                 return cls(*row)
             return None
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -81,14 +81,14 @@ class Shop:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM shops WHERE user_id = ?', (user_id,))
+            cursor.execute('SELECT * FROM shops WHERE user_id = %s', (user_id,))
             row = cursor.fetchone()
             
             if row:
                 return cls(*row)
             return None
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -106,16 +106,16 @@ class Shop:
                 cursor.execute('''
                     SELECT s.*, u.email FROM shops s
                     LEFT JOIN users u ON s.user_id = u.id
-                    WHERE s.shop_name LIKE ? OR s.owner_name LIKE ? OR u.email LIKE ?
+                    WHERE s.shop_name LIKE %s OR s.owner_name LIKE %s OR u.email LIKE %s
                     ORDER BY s.created_at DESC
-                    LIMIT ? OFFSET ?
+                    LIMIT %s OFFSET %s
                 ''', (f'%{search}%', f'%{search}%', f'%{search}%', limit, offset))
             else:
                 cursor.execute('''
                     SELECT s.*, u.email FROM shops s
                     LEFT JOIN users u ON s.user_id = u.id
                     ORDER BY s.created_at DESC
-                    LIMIT ? OFFSET ?
+                    LIMIT %s OFFSET %s
                 ''', (limit, offset))
             
             rows = cursor.fetchall()
@@ -128,7 +128,7 @@ class Shop:
             
             return shops
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -143,7 +143,7 @@ class Shop:
             cursor.execute('SELECT COUNT(*) FROM shops')
             return cursor.fetchone()[0]
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -158,7 +158,7 @@ class Shop:
             cursor.execute('SELECT COUNT(*) FROM shops WHERE is_active = 1')
             return cursor.fetchone()[0]
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -171,15 +171,15 @@ class Shop:
         try:
             cursor.execute('''
                 UPDATE shops 
-                SET is_active = 1, subscription_status = 'active', updated_at = ?
-                WHERE id = ?
+                SET is_active = 1, subscription_status = 'active', updated_at = %s
+                WHERE id = %s
             ''', (datetime.now(), self.id))
             
             conn.commit()
             self.is_active = True
             self.subscription_status = 'active'
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -193,15 +193,15 @@ class Shop:
         try:
             cursor.execute('''
                 UPDATE shops 
-                SET is_active = 0, subscription_status = 'inactive', updated_at = ?
-                WHERE id = ?
+                SET is_active = 0, subscription_status = 'inactive', updated_at = %s
+                WHERE id = %s
             ''', (datetime.now(), self.id))
             
             conn.commit()
             self.is_active = False
             self.subscription_status = 'inactive'
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -215,10 +215,10 @@ class Shop:
         try:
             cursor.execute('''
                 UPDATE shops 
-                SET shop_name = ?, owner_name = ?, phone = ?, address = ?, 
-                    city = ?, state = ?, pincode = ?, gst_number = ?, 
-                    license_number = ?, updated_at = ?
-                WHERE id = ?
+                SET shop_name = %s, owner_name = %s, phone = %s, address = %s, 
+                    city = %s, state = %s, pincode = %s, gst_number = %s, 
+                    license_number = %s, updated_at = %s
+                WHERE id = %s
             ''', (
                 shop_data.get('shop_name', self.shop_name),
                 shop_data.get('owner_name', self.owner_name),
@@ -240,7 +240,7 @@ class Shop:
                 if hasattr(self, key):
                     setattr(self, key, value)
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -253,39 +253,39 @@ class Shop:
         
         try:
             # Get total customers
-            cursor.execute('SELECT COUNT(*) FROM customers WHERE shop_id = ?', (self.id,))
+            cursor.execute('SELECT COUNT(*) FROM customers WHERE shop_id = %s', (self.id,))
             total_customers = cursor.fetchone()[0]
             
             # Get total products
-            cursor.execute('SELECT COUNT(*) FROM products WHERE shop_id = ? AND is_active = 1', (self.id,))
+            cursor.execute('SELECT COUNT(*) FROM products WHERE shop_id = %s AND is_active = 1', (self.id,))
             total_products = cursor.fetchone()[0]
             
             # Get total invoices
-            cursor.execute('SELECT COUNT(*) FROM invoices WHERE shop_id = ?', (self.id,))
+            cursor.execute('SELECT COUNT(*) FROM invoices WHERE shop_id = %s', (self.id,))
             total_invoices = cursor.fetchone()[0]
             
             # Get total revenue (sum of total_amount from invoices)
-            cursor.execute('SELECT COALESCE(SUM(total_amount), 0) FROM invoices WHERE shop_id = ?', (self.id,))
+            cursor.execute('SELECT COALESCE(SUM(total_amount), 0) FROM invoices WHERE shop_id = %s', (self.id,))
             total_revenue = cursor.fetchone()[0] or 0
             
             # Get today's sales
             cursor.execute('''
                 SELECT COALESCE(SUM(total_amount), 0) FROM invoices 
-                WHERE shop_id = ? AND DATE(invoice_date) = DATE('now')
+                WHERE shop_id = %s AND DATE(invoice_date) = DATE('now')
             ''', (self.id,))
             todays_sales = cursor.fetchone()[0] or 0
             
             # Get monthly sales (current month)
             cursor.execute('''
                 SELECT COALESCE(SUM(total_amount), 0) FROM invoices 
-                WHERE shop_id = ? AND strftime('%Y-%m', invoice_date) = strftime('%Y-%m', 'now')
+                WHERE shop_id = %s AND strftime('%Y-%m', invoice_date) = strftime('%Y-%m', 'now')
             ''', (self.id,))
             monthly_sales = cursor.fetchone()[0] or 0
             
             # Get low stock products
             cursor.execute('''
                 SELECT COUNT(*) FROM products 
-                WHERE shop_id = ? AND is_active = 1 AND stock_quantity <= min_stock_level
+                WHERE shop_id = %s AND is_active = 1 AND stock_quantity <= min_stock_level
             ''', (self.id,))
             low_stock_products = cursor.fetchone()[0]
             
@@ -299,7 +299,7 @@ class Shop:
                 'low_stock_products': low_stock_products
             }
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()

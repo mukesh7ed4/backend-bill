@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from datetime import datetime, date
 from src.database_postgresql import get_db_connection
 
@@ -30,7 +30,7 @@ class Invoice:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT COUNT(*) FROM invoices WHERE shop_id = ?
+                SELECT COUNT(*) FROM invoices WHERE shop_id = %s
             ''', (shop_id,))
             count = cursor.fetchone()[0]
             
@@ -75,7 +75,7 @@ class Invoice:
                     shop_id, customer_id, invoice_number, invoice_date, due_date,
                     subtotal, tax_amount, discount_amount, total_amount,
                     paid_amount, balance_amount, status, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 shop_id, customer_id,
                 invoice_number, invoice_data['invoice_date'],
@@ -101,7 +101,7 @@ class Invoice:
                 total_price = quantity * unit_price
                 
                 # Get product details for product_name and unit
-                cursor.execute('SELECT name, unit FROM products WHERE id = ?', (item['product_id'],))
+                cursor.execute('SELECT name, unit FROM products WHERE id = %s', (item['product_id'],))
                 product_row = cursor.fetchone()
                 if not product_row:
                     raise Exception(f"Product with ID {item['product_id']} not found")
@@ -111,7 +111,7 @@ class Invoice:
                 cursor.execute('''
                     INSERT INTO invoice_items (
                         invoice_id, product_id, product_name, unit, quantity, unit_price, total_price
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     invoice_id, item['product_id'], product_name, unit, quantity,
                     unit_price, total_price
@@ -120,8 +120,8 @@ class Invoice:
                 # Update product stock
                 cursor.execute('''
                     UPDATE products 
-                    SET stock_quantity = stock_quantity - ?
-                    WHERE id = ?
+                    SET stock_quantity = stock_quantity - %s
+                    WHERE id = %s
                 ''', (quantity, item['product_id']))
             
             conn.commit()
@@ -132,7 +132,7 @@ class Invoice:
         """Get invoice by ID"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM invoices WHERE id = ?', (invoice_id,))
+            cursor.execute('SELECT * FROM invoices WHERE id = %s', (invoice_id,))
             row = cursor.fetchone()
             
             if row:
@@ -148,22 +148,22 @@ class Invoice:
             query = '''
                 SELECT i.* FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
-                WHERE i.shop_id = ?
+                WHERE i.shop_id = %s
             '''
             params = [shop_id]
             
             if status:
-                query += ' AND i.status = ?'
+                query += ' AND i.status = %s'
                 params.append(status)
             
             if search:
-                query += ' AND (i.invoice_number LIKE ? OR c.name LIKE ?)'
+                query += ' AND (i.invoice_number LIKE %s OR c.name LIKE %s)'
                 search_term = f'%{search}%'
                 params.extend([search_term, search_term])
             
             # Handle specific date filter
             if date_filter:
-                query += ' AND DATE(i.invoice_date) = ?'
+                query += ' AND DATE(i.invoice_date) = %s'
                 params.append(date_filter)
             
             # Handle date filtering for week/month
@@ -189,10 +189,10 @@ class Invoice:
                 query += ' ORDER BY i.invoice_date DESC'
             
             if limit:
-                query += ' LIMIT ?'
+                query += ' LIMIT %s'
                 params.append(limit)
                 if offset:
-                    query += ' OFFSET ?'
+                    query += ' OFFSET %s'
                     params.append(offset)
             
             cursor.execute(query, params)
@@ -208,26 +208,26 @@ class Invoice:
             
             query = '''
                 SELECT i.* FROM invoices i
-                WHERE i.customer_id = ? AND i.shop_id = ?
+                WHERE i.customer_id = %s AND i.shop_id = %s
             '''
             params = [customer_id, shop_id]
             
             if status:
-                query += ' AND i.status = ?'
+                query += ' AND i.status = %s'
                 params.append(status)
             
             if search:
-                query += ' AND i.invoice_number LIKE ?'
+                query += ' AND i.invoice_number LIKE %s'
                 search_term = f'%{search}%'
                 params.append(search_term)
             
             query += ' ORDER BY i.invoice_date DESC'
             
             if limit:
-                query += ' LIMIT ?'
+                query += ' LIMIT %s'
                 params.append(limit)
                 if offset:
-                    query += ' OFFSET ?'
+                    query += ' OFFSET %s'
                     params.append(offset)
             
             cursor.execute(query, params)
@@ -241,7 +241,7 @@ class Invoice:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, invoice_id, product_id, product_name, unit, quantity, unit_price, total_price, created_at 
-                FROM invoice_items WHERE invoice_id = ?
+                FROM invoice_items WHERE invoice_id = %s
             ''', (self.id,))
             rows = cursor.fetchall()
             
@@ -253,7 +253,7 @@ class Invoice:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM invoice_payments 
-                WHERE invoice_id = ? 
+                WHERE invoice_id = %s 
                 ORDER BY payment_date DESC
             ''', (self.id,))
             rows = cursor.fetchall()
@@ -283,7 +283,7 @@ class Invoice:
                 INSERT INTO invoice_payments (
                     invoice_id, amount, payment_method, payment_date, 
                     reference_number, notes, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 self.id, amount, payment_method, payment_date,
                 reference_number, notes, datetime.now(), datetime.now()
@@ -307,8 +307,8 @@ class Invoice:
             
             cursor.execute('''
                 UPDATE invoices 
-                SET paid_amount = ?, balance_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET paid_amount = %s, balance_amount = %s, status = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
             ''', (new_paid_amount, new_balance_amount, new_status, self.id))
             
             conn.commit()
@@ -326,8 +326,8 @@ class Invoice:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE invoices 
-                SET status = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET status = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
             ''', (status, self.id))
             conn.commit()
             self.status = status
@@ -384,7 +384,7 @@ class Invoice:
                         cursor.execute('''
                             SELECT quantity, unit_price, total_price, product_id 
                             FROM invoice_items 
-                            WHERE id = ?
+                            WHERE id = %s
                         ''', (item['invoice_item_id'],))
                         
                         original_item = cursor.fetchone()
@@ -407,20 +407,20 @@ class Invoice:
                         
                         cursor.execute('''
                             UPDATE invoice_items 
-                            SET quantity = ?, total_price = ?
-                            WHERE id = ?
+                            SET quantity = %s, total_price = %s
+                            WHERE id = %s
                         ''', (new_quantity, new_total_price, item['invoice_item_id']))
                         
                         # Update product stock (add back returned quantity)
                         cursor.execute('''
                             UPDATE products 
-                            SET stock_quantity = stock_quantity + ?
-                            WHERE id = ?
+                            SET stock_quantity = stock_quantity + %s
+                            WHERE id = %s
                         ''', (item['returned_quantity'], product_id))
                 
                 # Recalculate invoice totals
                 cursor.execute('''
-                    SELECT SUM(total_price) FROM invoice_items WHERE invoice_id = ?
+                    SELECT SUM(total_price) FROM invoice_items WHERE invoice_id = %s
                 ''', (self.id,))
                 
                 new_subtotal = cursor.fetchone()[0] or 0
@@ -451,8 +451,8 @@ class Invoice:
                 # Update invoice amounts
                 cursor.execute('''
                     UPDATE invoices 
-                    SET total_amount = ?, paid_amount = ?, balance_amount = ?
-                    WHERE id = ?
+                    SET total_amount = %s, paid_amount = %s, balance_amount = %s
+                    WHERE id = %s
                 ''', (new_total_amount, new_paid_amount, new_total_amount - new_paid_amount, self.id))
                 
                 # Determine new status
@@ -461,8 +461,8 @@ class Invoice:
                 
                 cursor.execute('''
                     UPDATE invoices 
-                    SET status = ?
-                    WHERE id = ?
+                    SET status = %s
+                    WHERE id = %s
                 ''', (new_status, self.id))
                 
                 # Create a refund payment record if there's a refund
@@ -473,7 +473,7 @@ class Invoice:
                         INSERT INTO invoice_payments (
                             invoice_id, amount, payment_method, payment_date, 
                             reference_number, notes, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         self.id, -refund_amount, 'refund', datetime.now().date(),
                         f'RETURN-{datetime.now().strftime("%Y%m%d%H%M%S")}', 
@@ -484,7 +484,7 @@ class Invoice:
                 conn.commit()
                 return total_return_amount
                 
-            except sqlite3.Error as e:
+            except psycopg2.Error as e:
                 conn.rollback()
                 raise Exception(f"Database error: {e}")
 
@@ -494,17 +494,17 @@ class Invoice:
             cursor = conn.cursor()
             try:
                 # Delete invoice payments first
-                cursor.execute('DELETE FROM invoice_payments WHERE invoice_id = ?', (self.id,))
+                cursor.execute('DELETE FROM invoice_payments WHERE invoice_id = %s', (self.id,))
                 
                 # Delete invoice items
-                cursor.execute('DELETE FROM invoice_items WHERE invoice_id = ?', (self.id,))
+                cursor.execute('DELETE FROM invoice_items WHERE invoice_id = %s', (self.id,))
                 
                 # Delete the invoice
-                cursor.execute('DELETE FROM invoices WHERE id = ?', (self.id,))
+                cursor.execute('DELETE FROM invoices WHERE id = %s', (self.id,))
                 
                 conn.commit()
                 return True
-            except sqlite3.Error as e:
+            except psycopg2.Error as e:
                 conn.rollback()
                 raise Exception(f"Database error: {e}")
             finally:

@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from datetime import datetime
 from src.database_postgresql import get_db_connection
 
@@ -31,7 +31,7 @@ class Product:
                 INSERT INTO products (
                     shop_id, name, category, brand, description, unit, price,
                     stock_quantity, min_stock_level, barcode
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 shop_id, product_data['name'], product_data['category'],
                 product_data.get('brand'), product_data.get('description'),
@@ -50,7 +50,7 @@ class Product:
         """Get product by ID"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+            cursor.execute('SELECT * FROM products WHERE id = %s', (product_id,))
             row = cursor.fetchone()
             
             if row:
@@ -63,28 +63,28 @@ class Product:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            query = 'SELECT * FROM products WHERE shop_id = ?'
+            query = 'SELECT * FROM products WHERE shop_id = %s'
             params = [shop_id]
             
             if active_only:
                 query += ' AND is_active = 1'
             
             if search:
-                query += ' AND (name LIKE ? OR brand LIKE ? OR barcode LIKE ?)'
+                query += ' AND (name LIKE %s OR brand LIKE %s OR barcode LIKE %s)'
                 search_term = f'%{search}%'
                 params.extend([search_term, search_term, search_term])
             
             if category:
-                query += ' AND category = ?'
+                query += ' AND category = %s'
                 params.append(category)
             
             query += ' ORDER BY name ASC'
             
             if limit:
-                query += ' LIMIT ?'
+                query += ' LIMIT %s'
                 params.append(limit)
                 if offset:
-                    query += ' OFFSET ?'
+                    query += ' OFFSET %s'
                     params.append(offset)
             
             cursor.execute(query, params)
@@ -100,7 +100,7 @@ class Product:
             cursor.execute('''
                 SELECT DISTINCT category 
                 FROM products 
-                WHERE shop_id = ? AND is_active = 1 
+                WHERE shop_id = %s AND is_active = 1 
                 ORDER BY category
             ''', (shop_id,))
             rows = cursor.fetchall()
@@ -114,7 +114,7 @@ class Product:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM products 
-                WHERE shop_id = ? AND is_active = 1 AND stock_quantity <= min_stock_level
+                WHERE shop_id = %s AND is_active = 1 AND stock_quantity <= min_stock_level
                 ORDER BY stock_quantity ASC
             ''', (shop_id,))
             rows = cursor.fetchall()
@@ -128,7 +128,7 @@ class Product:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM products 
-                WHERE shop_id = ? AND barcode = ? AND is_active = 1
+                WHERE shop_id = %s AND barcode = %s AND is_active = 1
             ''', (shop_id, barcode))
             row = cursor.fetchone()
             
@@ -148,7 +148,7 @@ class Product:
         
         for field, value in kwargs.items():
             if field in allowed_fields:
-                update_fields.append(f"{field} = ?")
+                update_fields.append(f"{field} = %s")
                 values.append(value)
         
         if not update_fields:
@@ -161,7 +161,7 @@ class Product:
             cursor.execute(f'''
                 UPDATE products 
                 SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = %s
             ''', values)
             conn.commit()
             return cursor.rowcount > 0

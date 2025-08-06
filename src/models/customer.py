@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from datetime import datetime
 from src.database_postgresql import get_db_connection
 
@@ -27,7 +27,7 @@ class Customer:
             cursor.execute('''
                 INSERT INTO customers (
                     shop_id, name, phone, email, address, city, state, pincode, gst_number
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 shop_id, customer_data['name'], customer_data.get('phone'),
                 customer_data.get('email'), customer_data.get('address'),
@@ -44,7 +44,7 @@ class Customer:
         """Get customer by ID"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM customers WHERE id = ?', (customer_id,))
+            cursor.execute('SELECT * FROM customers WHERE id = %s', (customer_id,))
             row = cursor.fetchone()
             
             if row:
@@ -57,21 +57,21 @@ class Customer:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            query = 'SELECT * FROM customers WHERE shop_id = ?'
+            query = 'SELECT * FROM customers WHERE shop_id = %s'
             params = [shop_id]
             
             if search:
-                query += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)'
+                query += ' AND (name LIKE %s OR phone LIKE %s OR email LIKE %s)'
                 search_term = f'%{search}%'
                 params.extend([search_term, search_term, search_term])
             
             query += ' ORDER BY name ASC'
             
             if limit:
-                query += ' LIMIT ?'
+                query += ' LIMIT %s'
                 params.append(limit)
                 if offset:
-                    query += ' OFFSET ?'
+                    query += ' OFFSET %s'
                     params.append(offset)
             
             cursor.execute(query, params)
@@ -86,7 +86,7 @@ class Customer:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM customers 
-                WHERE shop_id = ? AND phone LIKE ?
+                WHERE shop_id = %s AND phone LIKE %s
             ''', (shop_id, f'%{phone}%'))
             rows = cursor.fetchall()
             
@@ -104,7 +104,7 @@ class Customer:
         
         for field, value in kwargs.items():
             if field in allowed_fields:
-                update_fields.append(f"{field} = ?")
+                update_fields.append(f"{field} = %s")
                 values.append(value)
         
         if not update_fields:
@@ -117,7 +117,7 @@ class Customer:
             cursor.execute(f'''
                 UPDATE customers 
                 SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = %s
             ''', values)
             conn.commit()
             return cursor.rowcount > 0
@@ -126,7 +126,7 @@ class Customer:
         """Delete customer"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM customers WHERE id = ?', (self.id,))
+            cursor.execute('DELETE FROM customers WHERE id = %s', (self.id,))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -137,13 +137,13 @@ class Customer:
             
             query = '''
                 SELECT * FROM invoices 
-                WHERE customer_id = ? 
+                WHERE customer_id = %s 
                 ORDER BY invoice_date DESC
             '''
             params = [self.id]
             
             if limit:
-                query += ' LIMIT ?'
+                query += ' LIMIT %s'
                 params.append(limit)
             
             cursor.execute(query, params)
@@ -159,7 +159,7 @@ class Customer:
             cursor.execute('''
                 SELECT COALESCE(SUM(total_amount), 0) 
                 FROM invoices 
-                WHERE customer_id = ?
+                WHERE customer_id = %s
             ''', (self.id,))
             return float(cursor.fetchone()[0])
 
@@ -170,7 +170,7 @@ class Customer:
             cursor.execute('''
                 SELECT COALESCE(SUM(balance_amount), 0) 
                 FROM invoices 
-                WHERE customer_id = ? AND balance_amount > 0
+                WHERE customer_id = %s AND balance_amount > 0
             ''', (self.id,))
             return float(cursor.fetchone()[0])
 
@@ -182,9 +182,9 @@ class Customer:
                 SELECT ip.*, i.invoice_number, i.invoice_date
                 FROM invoice_payments ip
                 JOIN invoices i ON ip.invoice_id = i.id
-                WHERE i.customer_id = ?
+                WHERE i.customer_id = %s
                 ORDER BY ip.payment_date DESC, ip.created_at DESC
-                LIMIT ?
+                LIMIT %s
             ''', (self.id, limit))
             
             rows = cursor.fetchall()

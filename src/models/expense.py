@@ -1,4 +1,4 @@
-from src.database_sqlite import get_db_connection
+from src.database_postgresql import get_db_connection
 from datetime import datetime
 
 class Expense:
@@ -23,14 +23,13 @@ class Expense:
         """Create a new expense"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
             query = '''
                 INSERT INTO expenses (
                     shop_id, title, description, amount, category, expense_date,
                     payment_method, reference_number, notes, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             '''
-            
             now = datetime.now().isoformat()
             cursor.execute(query, (
                 shop_id,
@@ -45,10 +44,8 @@ class Expense:
                 now,
                 now
             ))
-            
-            expense_id = cursor.lastrowid
+            expense_id = cursor.fetchone()[0]
             conn.commit()
-            
             return cls.get_by_id(expense_id)
 
     @classmethod
@@ -57,10 +54,9 @@ class Expense:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT * FROM expenses WHERE id = ?
+                SELECT * FROM expenses WHERE id = %s
             ''', (expense_id,))
             row = cursor.fetchone()
-            
             if row:
                 return cls(*row)
             return None
@@ -70,27 +66,20 @@ class Expense:
         """Get expenses by shop ID with optional filtering and sorting"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
             query = '''
-                SELECT * FROM expenses WHERE shop_id = ?
+                SELECT * FROM expenses WHERE shop_id = %s
             '''
             params = [shop_id]
-            
             if category:
-                query += ' AND category = ?'
+                query += ' AND category = %s'
                 params.append(category)
-            
             if search:
-                query += ' AND (title LIKE ? OR description LIKE ?)'
+                query += ' AND (title ILIKE %s OR description ILIKE %s)'
                 search_term = f'%{search}%'
                 params.extend([search_term, search_term])
-            
-            # Handle specific date filter
             if date_filter:
-                query += ' AND DATE(expense_date) = ?'
+                query += ' AND expense_date = %s'
                 params.append(date_filter)
-            
-            # Handle sorting
             if sort == 'latest':
                 query += ' ORDER BY expense_date DESC, created_at DESC'
             elif sort == 'oldest':
@@ -101,24 +90,21 @@ class Expense:
                 query += ' ORDER BY amount ASC'
             else:
                 query += ' ORDER BY expense_date DESC'
-            
             if limit:
-                query += ' LIMIT ?'
+                query += ' LIMIT %s'
                 params.append(limit)
                 if offset:
-                    query += ' OFFSET ?'
+                    query += ' OFFSET %s'
                     params.append(offset)
-            
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            
             return [cls(*row) for row in rows]
 
     def delete(self):
         """Delete expense"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM expenses WHERE id = ?', (self.id,))
+            cursor.execute('DELETE FROM expenses WHERE id = %s', (self.id,))
             conn.commit()
 
     def to_dict(self):
