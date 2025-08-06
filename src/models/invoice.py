@@ -23,7 +23,6 @@ class Invoice(db.Model):
     # Relationships
     shop = db.relationship('Shop', backref=db.backref('invoices', lazy=True))
     items = db.relationship('InvoiceItem', backref='invoice', lazy=True, cascade='all, delete-orphan')
-    payments = db.relationship('InvoicePayment', backref='invoice', lazy=True, cascade='all, delete-orphan')
 
     @classmethod
     def generate_invoice_number(cls, shop_id):
@@ -252,9 +251,11 @@ class Invoice(db.Model):
         return False
 
     def get_payment_summary(self):
-        total_paid = sum(payment.amount for payment in self.payments)
+        from src.models.payment import InvoicePayment
+        payments = InvoicePayment.query.filter_by(invoice_id=self.id).all()
+        total_paid = sum(payment.amount for payment in payments)
         remaining_balance = self.total_amount - total_paid
-        payment_count = len(self.payments)
+        payment_count = len(payments)
         
         return {
             'total_amount': self.total_amount,
@@ -404,7 +405,9 @@ class Invoice(db.Model):
             result['customer'] = customer.to_dict() if customer else None
             
         if include_payments:
-            result['payments'] = [payment.to_dict() for payment in self.payments]
+            from src.models.payment import InvoicePayment
+            payments = InvoicePayment.query.filter_by(invoice_id=self.id).all()
+            result['payments'] = [payment.to_dict() for payment in payments]
         
         return result
 

@@ -112,9 +112,6 @@ class InvoicePayment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
-    invoice = db.relationship('Invoice', backref=db.backref('payments', lazy=True))
-
     @classmethod
     def create(cls, invoice_id, payment_data):
         payment = cls(
