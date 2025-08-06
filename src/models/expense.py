@@ -1,125 +1,106 @@
-from src.database_postgresql import get_db_connection
 from datetime import datetime
+from src.models.user import db
 
-class Expense:
-    def __init__(self, id=None, shop_id=None, title=None, description=None, amount=None, 
-                 category=None, expense_date=None, payment_method=None, reference_number=None, 
-                 notes=None, created_at=None, updated_at=None):
-        self.id = id
-        self.shop_id = shop_id
-        self.title = title
-        self.description = description
-        self.amount = amount
-        self.category = category
-        self.expense_date = expense_date
-        self.payment_method = payment_method
-        self.reference_number = reference_number
-        self.notes = notes
-        self.created_at = created_at
-        self.updated_at = updated_at
+class Expense(db.Model):
+    __tablename__ = 'expenses'
+    id = db.Column(db.Integer, primary_key=True)
+    shop_id = db.Column(db.Integer, db.ForeignKey('shops.id'), nullable=False)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    category = db.Column(db.String(100), nullable=False)
+    expense_date = db.Column(db.Date, nullable=False)
+    payment_method = db.Column(db.String(100), default='cash')
+    reference_number = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    shop = db.relationship('Shop', backref=db.backref('expenses', lazy=True))
 
     @classmethod
     def create(cls, shop_id, expense_data):
-        """Create a new expense"""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            query = '''
-                INSERT INTO expenses (
-                    shop_id, title, description, amount, category, expense_date,
-                    payment_method, reference_number, notes, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            '''
-            now = datetime.now().isoformat()
-            cursor.execute(query, (
-                shop_id,
-                expense_data['title'],
-                expense_data.get('description', ''),
-                expense_data['amount'],
-                expense_data['category'],
-                expense_data['expense_date'],
-                expense_data.get('payment_method', 'cash'),
-                expense_data.get('reference_number', ''),
-                expense_data.get('notes', ''),
-                now,
-                now
-            ))
-            expense_id = cursor.fetchone()[0]
-            conn.commit()
-            return cls.get_by_id(expense_id)
+        expense = cls(
+            shop_id=shop_id,
+            title=expense_data['title'],
+            description=expense_data.get('description', ''),
+            amount=expense_data['amount'],
+            category=expense_data['category'],
+            expense_date=expense_data['expense_date'],
+            payment_method=expense_data.get('payment_method', 'cash'),
+            reference_number=expense_data.get('reference_number', ''),
+            notes=expense_data.get('notes', '')
+        )
+        db.session.add(expense)
+        db.session.commit()
+        return expense
 
     @classmethod
     def get_by_id(cls, expense_id):
-        """Get expense by ID"""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT * FROM expenses WHERE id = %s
-            ''', (expense_id,))
-            row = cursor.fetchone()
-            if row:
-                return cls(*row)
-            return None
+        return cls.query.get(expense_id)
 
     @classmethod
     def get_by_shop_id(cls, shop_id, limit=None, offset=None, category=None, search=None, sort='latest', date_filter=None):
-        """Get expenses by shop ID with optional filtering and sorting"""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            query = '''
-                SELECT * FROM expenses WHERE shop_id = %s
-            '''
-            params = [shop_id]
-            if category:
-                query += ' AND category = %s'
-                params.append(category)
-            if search:
-                query += ' AND (title ILIKE %s OR description ILIKE %s)'
-                search_term = f'%{search}%'
-                params.extend([search_term, search_term])
-            if date_filter:
-                query += ' AND expense_date = %s'
-                params.append(date_filter)
-            if sort == 'latest':
-                query += ' ORDER BY expense_date DESC, created_at DESC'
-            elif sort == 'oldest':
-                query += ' ORDER BY expense_date ASC, created_at ASC'
-            elif sort == 'amount_high':
-                query += ' ORDER BY amount DESC'
-            elif sort == 'amount_low':
-                query += ' ORDER BY amount ASC'
-            else:
-                query += ' ORDER BY expense_date DESC'
-            if limit:
-                query += ' LIMIT %s'
-                params.append(limit)
-                if offset:
-                    query += ' OFFSET %s'
-                    params.append(offset)
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            return [cls(*row) for row in rows]
+        query = cls.query.filter_by(shop_id=shop_id)
+        
+        if category:
+            query = query.filter_by(category=category)
+        
+        if search:
+            query = query.filter(
+                db.or_(
+                    cls.title.ilike(f'%{search}%'),
+                    cls.description.ilike(f'%{search}%')
+                )
+            )
+        
+        if date_filter:
+            query = query.filter(cls.expense_date == date_filter)
+        
+        if sort == 'latest':
+            query = query.order_by(db.desc(cls.expense_date), db.desc(cls.created_at))
+        elif sort == 'oldest':
+            query = query.order_by(cls.expense_date.asc(), cls.created_at.asc())
+        elif sort == 'amount_high':
+            query = query.order_by(db.desc(cls.amount))
+        elif sort == 'amount_low':
+            query = query.order_by(cls.amount.asc())
+        else:
+            query = query.order_by(db.desc(cls.expense_date))
+        
+        if limit:
+            if offset:
+                query = query.offset(offset)
+            query = query.limit(limit)
+        
+        return query.all()
 
     def delete(self):
-        """Delete expense"""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM expenses WHERE id = %s', (self.id,))
-            conn.commit()
+        db.session.delete(self)
+        db.session.commit()
 
     def to_dict(self):
-        """Convert expense to dictionary"""
+        def format_datetime(dt):
+            if dt is None:
+                return None
+            if isinstance(dt, str):
+                return dt
+            if hasattr(dt, 'isoformat'):
+                return dt.isoformat()
+            return str(dt)
+        
         return {
             'id': self.id,
             'shop_id': self.shop_id,
             'title': self.title,
             'description': self.description,
-            'amount': self.amount,
+            'amount': float(self.amount),
             'category': self.category,
-            'expense_date': self.expense_date,
+            'expense_date': format_datetime(self.expense_date),
             'payment_method': self.payment_method,
             'reference_number': self.reference_number,
             'notes': self.notes,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at
+            'created_at': format_datetime(self.created_at),
+            'updated_at': format_datetime(self.updated_at)
         } 

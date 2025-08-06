@@ -1,9 +1,11 @@
-import psycopg
+import sqlite3
 import bcrypt
 from datetime import datetime
-from src.database_postgresql import get_db_connection
+from src.database_sqlite import get_db_connection
 
 # Initialize database connection for SQLAlchemy-like usage
+db = None
+
 class User:
     def __init__(self, id=None, username=None, email=None, password_hash=None,
                  role='shop_user', is_active=True, created_at=None, updated_at=None):
@@ -21,28 +23,31 @@ class User:
         """Create a new user"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
             # Hash password
             password_hash = bcrypt.hashpw(
                 user_data['password'].encode('utf-8'), 
                 bcrypt.gensalt()
             ).decode('utf-8')
+            
             cursor.execute('''
                 INSERT INTO users (username, email, password_hash, role, is_active, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 user_data['username'], user_data['email'], password_hash,
                 user_data.get('role', 'shop_user'), True, datetime.now(), datetime.now()
             ))
-            user_id = cursor.fetchone()[0]
+            
+            user_id = cursor.lastrowid
             conn.commit()
+            
             return cls.get_by_id(user_id)
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     @classmethod
@@ -50,16 +55,18 @@ class User:
         """Get user by ID"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
-            cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+            cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
             row = cursor.fetchone()
+            
             if row:
                 return cls(*row)
             return None
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     @classmethod
@@ -67,16 +74,18 @@ class User:
         """Get user by username"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
-            cursor.execute('SELECT * FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
             row = cursor.fetchone()
+            
             if row:
                 return cls(*row)
             return None
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     @classmethod
@@ -84,16 +93,18 @@ class User:
         """Get user by email"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
-            cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
+            cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
             row = cursor.fetchone()
+            
             if row:
                 return cls(*row)
             return None
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     @classmethod
@@ -117,13 +128,14 @@ class User:
         """Count all users"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
             cursor.execute('SELECT COUNT(*) FROM users')
             return cursor.fetchone()[0]
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     @classmethod
@@ -132,12 +144,14 @@ class User:
         admin = cls.get_by_username('admin')
         if admin:
             return None
+        
         admin_data = {
             'username': 'admin',
             'email': 'admin@billing.com',
             'password': 'admin123',
             'role': 'admin'
         }
+        
         return cls.create(admin_data)
 
     def check_password(self, password):
@@ -151,58 +165,68 @@ class User:
         """Update user password"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
             password_hash = bcrypt.hashpw(
                 new_password.encode('utf-8'), 
                 bcrypt.gensalt()
             ).decode('utf-8')
+            
             cursor.execute('''
                 UPDATE users 
-                SET password_hash = %s, updated_at = %s
-                WHERE id = %s
+                SET password_hash = ?, updated_at = ?
+                WHERE id = ?
             ''', (password_hash, datetime.now(), self.id))
+            
             conn.commit()
             self.password_hash = password_hash
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     def update(self, user_data):
         """Update user information"""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         try:
             cursor.execute('''
                 UPDATE users 
-                SET username = %s, email = %s, updated_at = %s
-                WHERE id = %s
+                SET username = ?, email = ?, updated_at = ?
+                WHERE id = ?
             ''', (
                 user_data.get('username', self.username),
                 user_data.get('email', self.email),
                 datetime.now(),
                 self.id
             ))
+            
             conn.commit()
+            
+            # Update instance attributes
             self.username = user_data.get('username', self.username)
             self.email = user_data.get('email', self.email)
-        except psycopg.Error as e:
+            
+        except sqlite3.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
-            cursor.close()
             conn.close()
 
     def to_dict(self):
-        """Convert user to dictionary"""
+        """Convert user to dictionary (excluding password)"""
         def format_datetime(dt):
-            if isinstance(dt, str):
-                return dt
             if dt is None:
                 return None
-            return dt.isoformat()
+            if isinstance(dt, str):
+                return dt
+            if hasattr(dt, 'isoformat'):
+                return dt.isoformat()
+            return str(dt)
+        
         return {
             'id': self.id,
             'username': self.username,

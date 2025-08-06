@@ -1,208 +1,81 @@
-import psycopg2
 from datetime import datetime
-from src.database_postgresql import get_db_connection
+from src.models.user import db
 
-class PaymentVerification:
-    def __init__(self, id=None, shop_id=None, amount=None, payment_method=None,
-                 reference_number=None, payment_proof=None, status='pending',
-                 admin_notes=None, created_at=None, updated_at=None):
-        self.id = id
-        self.shop_id = shop_id
-        self.amount = amount
-        self.payment_method = payment_method
-        self.reference_number = reference_number
-        self.payment_proof = payment_proof
-        self.status = status
-        self.admin_notes = admin_notes
-        self.created_at = created_at
-        self.updated_at = updated_at
+class PaymentVerification(db.Model):
+    __tablename__ = 'payment_verifications'
+    id = db.Column(db.Integer, primary_key=True)
+    shop_id = db.Column(db.Integer, db.ForeignKey('shops.id'), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    payment_method = db.Column(db.String(100), nullable=False)
+    reference_number = db.Column(db.String(100))
+    payment_proof = db.Column(db.Text)
+    status = db.Column(db.String(50), default='pending')
+    admin_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    shop = db.relationship('Shop', backref=db.backref('payment_verifications', lazy=True))
 
     @classmethod
     def create(cls, shop_id, payment_data):
-        """Create a new payment verification"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                INSERT INTO payment_verifications (
-                    shop_id, amount, payment_method, reference_number, 
-                    payment_proof, status, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                shop_id, payment_data.get('amount'), payment_data.get('payment_method'),
-                payment_data.get('reference_number'), payment_data.get('payment_proof'),
-                'pending', datetime.now(), datetime.now()
-            ))
-            
-            verification_id = cursor.lastrowid
-            conn.commit()
-            
-            return cls.get_by_id(verification_id)
-            
-        except psycopg2.Error as e:
-            conn.rollback()
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        verification = cls(
+            shop_id=shop_id,
+            amount=payment_data.get('amount'),
+            payment_method=payment_data.get('payment_method'),
+            reference_number=payment_data.get('reference_number'),
+            payment_proof=payment_data.get('payment_proof'),
+            status='pending'
+        )
+        db.session.add(verification)
+        db.session.commit()
+        return verification
 
     @classmethod
     def get_by_id(cls, verification_id):
-        """Get payment verification by ID"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('SELECT * FROM payment_verifications WHERE id = %s', (verification_id,))
-            row = cursor.fetchone()
-            
-            if row:
-                return cls(*row)
-            return None
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        return cls.query.get(verification_id)
 
     @classmethod
     def get_by_shop_id(cls, shop_id):
-        """Get payment verifications by shop ID"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                SELECT * FROM payment_verifications 
-                WHERE shop_id = %s 
-                ORDER BY created_at DESC
-            ''', (shop_id,))
-            
-            rows = cursor.fetchall()
-            return [cls(*row) for row in rows]
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        return cls.query.filter_by(shop_id=shop_id).order_by(cls.created_at.desc()).all()
 
     @classmethod
     def get_all_paginated(cls, page=1, limit=10, status=''):
-        """Get all payment verifications with pagination"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            offset = (page - 1) * limit
+        query = cls.query.join(Shop)
             
             if status:
-                cursor.execute('''
-                    SELECT pv.*, s.shop_name FROM payment_verifications pv
-                    LEFT JOIN shops s ON pv.shop_id = s.id
-                    WHERE pv.status = %s
-                    ORDER BY pv.created_at DESC
-                    LIMIT %s OFFSET %s
-                ''', (status, limit, offset))
-            else:
-                cursor.execute('''
-                    SELECT pv.*, s.shop_name FROM payment_verifications pv
-                    LEFT JOIN shops s ON pv.shop_id = s.id
-                    ORDER BY pv.created_at DESC
-                    LIMIT %s OFFSET %s
-                ''', (limit, offset))
-            
-            rows = cursor.fetchall()
-            verifications = []
-            
-            for row in rows:
-                verification = cls(*row[:-1])  # Exclude shop_name from verification object
-                verification.shop = {'shop_name': row[-1]}  # Add shop info
-                verifications.append(verification)
-            
-            return verifications
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+            query = query.filter(cls.status == status)
+        
+        verifications = query.order_by(cls.created_at.desc()).paginate(
+            page=page, per_page=limit, error_out=False
+        )
+        
+        # Add shop info to each verification
+        for verification in verifications.items:
+            verification.shop = {'shop_name': verification.shop.shop_name}
+        
+        return verifications.items
 
     @classmethod
     def count_pending(cls):
-        """Count pending payment verifications"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('SELECT COUNT(*) FROM payment_verifications WHERE status = %s', ('pending',))
-            return cursor.fetchone()[0]
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        return cls.query.filter_by(status='pending').count()
 
     @classmethod
     def get_total_verified_amount(cls):
-        """Get total amount of verified payments"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('SELECT SUM(amount) FROM payment_verifications WHERE status = %s', ('verified',))
-            result = cursor.fetchone()[0]
-            return result if result else 0
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        result = db.session.query(db.func.coalesce(db.func.sum(cls.amount), 0)).filter_by(status='verified').scalar()
+        return result
 
     def verify(self, admin_notes=''):
-        """Verify the payment"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                UPDATE payment_verifications 
-                SET status = %s, admin_notes = %s, updated_at = %s
-                WHERE id = %s
-            ''', (admin_notes, datetime.now(), self.id))
-            
-            conn.commit()
             self.status = 'verified'
             self.admin_notes = admin_notes
-            
-        except psycopg2.Error as e:
-            conn.rollback()
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        db.session.commit()
 
     def reject(self, admin_notes=''):
-        """Reject the payment"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                UPDATE payment_verifications 
-                SET status = %s, admin_notes = %s, updated_at = %s
-                WHERE id = %s
-            ''', (admin_notes, datetime.now(), self.id))
-            
-            conn.commit()
             self.status = 'rejected'
             self.admin_notes = admin_notes
-            
-        except psycopg2.Error as e:
-            conn.rollback()
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        db.session.commit()
 
     def to_dict(self):
-        """Convert payment verification to dictionary"""
         def format_datetime(dt):
             if dt is None:
                 return None
@@ -226,92 +99,44 @@ class PaymentVerification:
             'shop': getattr(self, 'shop', None)  # Include shop info if available
         }
 
+class InvoicePayment(db.Model):
+    __tablename__ = 'invoice_payments'
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    payment_method = db.Column(db.String(100), nullable=False)
+    payment_date = db.Column(db.Date, nullable=False)
+    reference_number = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class InvoicePayment:
-    def __init__(self, id=None, invoice_id=None, amount=None, payment_method=None,
-                 payment_date=None, reference_number=None, notes=None,
-                 created_at=None, updated_at=None):
-        self.id = id
-        self.invoice_id = invoice_id
-        self.amount = amount
-        self.payment_method = payment_method
-        self.payment_date = payment_date
-        self.reference_number = reference_number
-        self.notes = notes
-        self.created_at = created_at
-        self.updated_at = updated_at
+    # Relationships
+    invoice = db.relationship('Invoice', backref=db.backref('payments', lazy=True))
 
     @classmethod
     def create(cls, invoice_id, payment_data):
-        """Create a new invoice payment"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                INSERT INTO invoice_payments (
-                    invoice_id, amount, payment_method, payment_date,
-                    reference_number, notes, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                invoice_id, payment_data.get('amount'), payment_data.get('payment_method'),
-                payment_data.get('payment_date'), payment_data.get('reference_number'),
-                payment_data.get('notes'), datetime.now(), datetime.now()
-            ))
-            
-            payment_id = cursor.lastrowid
-            conn.commit()
-            
-            return cls.get_by_id(payment_id)
-            
-        except psycopg2.Error as e:
-            conn.rollback()
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        payment = cls(
+            invoice_id=invoice_id,
+            amount=payment_data.get('amount'),
+            payment_method=payment_data.get('payment_method'),
+            payment_date=payment_data.get('payment_date'),
+            reference_number=payment_data.get('reference_number'),
+            notes=payment_data.get('notes')
+        )
+        db.session.add(payment)
+        db.session.commit()
+        return payment
 
     @classmethod
     def get_by_id(cls, payment_id):
-        """Get invoice payment by ID"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('SELECT * FROM invoice_payments WHERE id = %s', (payment_id,))
-            row = cursor.fetchone()
-            
-            if row:
-                return cls(*row)
-            return None
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        return cls.query.get(payment_id)
 
     @classmethod
     def get_by_invoice_id(cls, invoice_id):
-        """Get payments by invoice ID"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                SELECT * FROM invoice_payments 
-                WHERE invoice_id = %s 
-                ORDER BY payment_date DESC
-            ''', (invoice_id,))
-            
-            rows = cursor.fetchall()
-            return [cls(*row) for row in rows]
-            
-        except psycopg2.Error as e:
-            raise Exception(f"Database error: {e}")
-        finally:
-            conn.close()
+        return cls.query.filter_by(invoice_id=invoice_id).order_by(cls.payment_date.desc()).all()
 
     def to_dict(self):
-        """Convert invoice payment to dictionary"""
         def format_datetime(dt):
             if dt is None:
                 return None
