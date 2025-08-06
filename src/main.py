@@ -5,14 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
-from src.database import db
-from src.models.user import User
-from src.models.shop import Shop
-from src.models.customer import Customer
-from src.models.product import Product
-from src.models.invoice import Invoice, InvoiceItem
-from src.models.payment import PaymentVerification, InvoicePayment
-from src.models.expense import Expense
+from src.models.user import db
+from src.database_sqlite import init_db
 
 # Import routes
 from src.routes.auth import auth_bp
@@ -23,12 +17,6 @@ from src.routes.payment import payment_bp
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'billing-system-secret-key-2024')
 
-# SQLAlchemy config
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db.init_app(app)
-
 # Session configuration for cross-origin requests
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -38,9 +26,8 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'None' if os.getenv('FLASK_ENV') == 'pro
 cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5175,http://localhost:3000').split(',')
 CORS(app, supports_credentials=True, origins=cors_origins)
 
-# Create tables
-with app.app_context():
-    db.create_all()
+# Initialize database
+init_db()
 
 # Register blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -80,6 +67,7 @@ def serve(path):
     static_folder_path = app.static_folder
     if static_folder_path is None:
         return "Static folder not configured", 404
+
     if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
         return send_from_directory(static_folder_path, path)
     else:
@@ -113,6 +101,7 @@ def forbidden(error):
 # Initialize admin user on startup
 with app.app_context():
     try:
+        from src.models.user import User
         admin_user = User.create_admin_user()
         if admin_user:
             print("Admin user initialized successfully")

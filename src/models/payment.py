@@ -1,82 +1,208 @@
+import sqlite3
 from datetime import datetime
-from src.database import db
+from src.database_sqlite import get_db_connection
 
-class PaymentVerification(db.Model):
-    __tablename__ = 'payment_verifications'
-    id = db.Column(db.Integer, primary_key=True)
-    shop_id = db.Column(db.Integer, db.ForeignKey('shops.id'), nullable=False)
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    payment_method = db.Column(db.String(100), nullable=False)
-    reference_number = db.Column(db.String(100))
-    payment_proof = db.Column(db.Text)
-    status = db.Column(db.String(50), default='pending')
-    admin_notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    shop = db.relationship('Shop', backref=db.backref('payment_verifications', lazy=True))
+class PaymentVerification:
+    def __init__(self, id=None, shop_id=None, amount=None, payment_method=None,
+                 reference_number=None, payment_proof=None, status='pending',
+                 admin_notes=None, created_at=None, updated_at=None):
+        self.id = id
+        self.shop_id = shop_id
+        self.amount = amount
+        self.payment_method = payment_method
+        self.reference_number = reference_number
+        self.payment_proof = payment_proof
+        self.status = status
+        self.admin_notes = admin_notes
+        self.created_at = created_at
+        self.updated_at = updated_at
 
     @classmethod
     def create(cls, shop_id, payment_data):
-        verification = cls(
-            shop_id=shop_id,
-            amount=payment_data.get('amount'),
-            payment_method=payment_data.get('payment_method'),
-            reference_number=payment_data.get('reference_number'),
-            payment_proof=payment_data.get('payment_proof'),
-            status='pending'
-        )
-        db.session.add(verification)
-        db.session.commit()
-        return verification
+        """Create a new payment verification"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO payment_verifications (
+                    shop_id, amount, payment_method, reference_number, 
+                    payment_proof, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                shop_id, payment_data.get('amount'), payment_data.get('payment_method'),
+                payment_data.get('reference_number'), payment_data.get('payment_proof'),
+                'pending', datetime.now(), datetime.now()
+            ))
+            
+            verification_id = cursor.lastrowid
+            conn.commit()
+            
+            return cls.get_by_id(verification_id)
+            
+        except sqlite3.Error as e:
+            conn.rollback()
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def get_by_id(cls, verification_id):
-        return cls.query.get(verification_id)
+        """Get payment verification by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT * FROM payment_verifications WHERE id = ?', (verification_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                return cls(*row)
+            return None
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def get_by_shop_id(cls, shop_id):
-        return cls.query.filter_by(shop_id=shop_id).order_by(cls.created_at.desc()).all()
+        """Get payment verifications by shop ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT * FROM payment_verifications 
+                WHERE shop_id = ? 
+                ORDER BY created_at DESC
+            ''', (shop_id,))
+            
+            rows = cursor.fetchall()
+            return [cls(*row) for row in rows]
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def get_all_paginated(cls, page=1, limit=10, status=''):
-        from src.models.shop import Shop
-        query = cls.query.join(Shop)
+        """Get all payment verifications with pagination"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        if status:
-            query = query.filter(cls.status == status)
-        
-        verifications = query.order_by(cls.created_at.desc()).paginate(
-            page=page, per_page=limit, error_out=False
-        )
-        
-        # Add shop info to each verification
-        for verification in verifications.items:
-            verification.shop = {'shop_name': verification.shop.shop_name}
-        
-        return verifications.items
+        try:
+            offset = (page - 1) * limit
+            
+            if status:
+                cursor.execute('''
+                    SELECT pv.*, s.shop_name FROM payment_verifications pv
+                    LEFT JOIN shops s ON pv.shop_id = s.id
+                    WHERE pv.status = ?
+                    ORDER BY pv.created_at DESC
+                    LIMIT ? OFFSET ?
+                ''', (status, limit, offset))
+            else:
+                cursor.execute('''
+                    SELECT pv.*, s.shop_name FROM payment_verifications pv
+                    LEFT JOIN shops s ON pv.shop_id = s.id
+                    ORDER BY pv.created_at DESC
+                    LIMIT ? OFFSET ?
+                ''', (limit, offset))
+            
+            rows = cursor.fetchall()
+            verifications = []
+            
+            for row in rows:
+                verification = cls(*row[:-1])  # Exclude shop_name from verification object
+                verification.shop = {'shop_name': row[-1]}  # Add shop info
+                verifications.append(verification)
+            
+            return verifications
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def count_pending(cls):
-        return cls.query.filter_by(status='pending').count()
+        """Count pending payment verifications"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT COUNT(*) FROM payment_verifications WHERE status = ?', ('pending',))
+            return cursor.fetchone()[0]
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def get_total_verified_amount(cls):
-        result = db.session.query(db.func.coalesce(db.func.sum(cls.amount), 0)).filter_by(status='verified').scalar()
-        return result
+        """Get total amount of verified payments"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT SUM(amount) FROM payment_verifications WHERE status = ?', ('verified',))
+            result = cursor.fetchone()[0]
+            return result if result else 0
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     def verify(self, admin_notes=''):
-        self.status = 'verified'
-        self.admin_notes = admin_notes
-        db.session.commit()
+        """Verify the payment"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE payment_verifications 
+                SET status = 'verified', admin_notes = ?, updated_at = ?
+                WHERE id = ?
+            ''', (admin_notes, datetime.now(), self.id))
+            
+            conn.commit()
+            self.status = 'verified'
+            self.admin_notes = admin_notes
+            
+        except sqlite3.Error as e:
+            conn.rollback()
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     def reject(self, admin_notes=''):
-        self.status = 'rejected'
-        self.admin_notes = admin_notes
-        db.session.commit()
+        """Reject the payment"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE payment_verifications 
+                SET status = 'rejected', admin_notes = ?, updated_at = ?
+                WHERE id = ?
+            ''', (admin_notes, datetime.now(), self.id))
+            
+            conn.commit()
+            self.status = 'rejected'
+            self.admin_notes = admin_notes
+            
+        except sqlite3.Error as e:
+            conn.rollback()
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     def to_dict(self):
+        """Convert payment verification to dictionary"""
         def format_datetime(dt):
             if dt is None:
                 return None
@@ -100,41 +226,92 @@ class PaymentVerification(db.Model):
             'shop': getattr(self, 'shop', None)  # Include shop info if available
         }
 
-class InvoicePayment(db.Model):
-    __tablename__ = 'invoice_payments'
-    id = db.Column(db.Integer, primary_key=True)
-    invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=False)
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    payment_method = db.Column(db.String(100), nullable=False)
-    payment_date = db.Column(db.Date, nullable=False)
-    reference_number = db.Column(db.String(100))
-    notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class InvoicePayment:
+    def __init__(self, id=None, invoice_id=None, amount=None, payment_method=None,
+                 payment_date=None, reference_number=None, notes=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.invoice_id = invoice_id
+        self.amount = amount
+        self.payment_method = payment_method
+        self.payment_date = payment_date
+        self.reference_number = reference_number
+        self.notes = notes
+        self.created_at = created_at
+        self.updated_at = updated_at
 
     @classmethod
     def create(cls, invoice_id, payment_data):
-        payment = cls(
-            invoice_id=invoice_id,
-            amount=payment_data.get('amount'),
-            payment_method=payment_data.get('payment_method'),
-            payment_date=payment_data.get('payment_date'),
-            reference_number=payment_data.get('reference_number'),
-            notes=payment_data.get('notes')
-        )
-        db.session.add(payment)
-        db.session.commit()
-        return payment
+        """Create a new invoice payment"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO invoice_payments (
+                    invoice_id, amount, payment_method, payment_date,
+                    reference_number, notes, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                invoice_id, payment_data.get('amount'), payment_data.get('payment_method'),
+                payment_data.get('payment_date'), payment_data.get('reference_number'),
+                payment_data.get('notes'), datetime.now(), datetime.now()
+            ))
+            
+            payment_id = cursor.lastrowid
+            conn.commit()
+            
+            return cls.get_by_id(payment_id)
+            
+        except sqlite3.Error as e:
+            conn.rollback()
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def get_by_id(cls, payment_id):
-        return cls.query.get(payment_id)
+        """Get invoice payment by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT * FROM invoice_payments WHERE id = ?', (payment_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                return cls(*row)
+            return None
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     @classmethod
     def get_by_invoice_id(cls, invoice_id):
-        return cls.query.filter_by(invoice_id=invoice_id).order_by(cls.payment_date.desc()).all()
+        """Get payments by invoice ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT * FROM invoice_payments 
+                WHERE invoice_id = ? 
+                ORDER BY payment_date DESC
+            ''', (invoice_id,))
+            
+            rows = cursor.fetchall()
+            return [cls(*row) for row in rows]
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+        finally:
+            conn.close()
 
     def to_dict(self):
+        """Convert invoice payment to dictionary"""
         def format_datetime(dt):
             if dt is None:
                 return None

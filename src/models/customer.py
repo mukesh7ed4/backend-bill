@@ -1,155 +1,214 @@
+import sqlite3
 from datetime import datetime
-from src.database import db
+from src.database_sqlite import get_db_connection
 
-class Customer(db.Model):
-    __tablename__ = 'customers'
-    id = db.Column(db.Integer, primary_key=True)
-    shop_id = db.Column(db.Integer, db.ForeignKey('shops.id'), nullable=False)
-    name = db.Column(db.String(255), nullable=False)
-    phone = db.Column(db.String(50))
-    email = db.Column(db.String(255))
-    address = db.Column(db.Text)
-    city = db.Column(db.String(100))
-    state = db.Column(db.String(100))
-    pincode = db.Column(db.String(20))
-    gst_number = db.Column(db.String(50))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    shop = db.relationship('Shop', backref=db.backref('customers', lazy=True))
+class Customer:
+    def __init__(self, id=None, shop_id=None, name=None, phone=None, email=None,
+                 address=None, city=None, state=None, pincode=None, gst_number=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.shop_id = shop_id
+        self.name = name
+        self.phone = phone
+        self.email = email
+        self.address = address
+        self.city = city
+        self.state = state
+        self.pincode = pincode
+        self.gst_number = gst_number
+        self.created_at = created_at
+        self.updated_at = updated_at
 
     @classmethod
     def create(cls, shop_id, customer_data):
-        customer = cls(
-            shop_id=shop_id,
-            name=customer_data['name'],
-            phone=customer_data.get('phone'),
-            email=customer_data.get('email'),
-            address=customer_data.get('address'),
-            city=customer_data.get('city'),
-            state=customer_data.get('state'),
-            pincode=customer_data.get('pincode'),
-            gst_number=customer_data.get('gst_number')
-        )
-        db.session.add(customer)
-        db.session.commit()
-        return customer
+        """Create a new customer"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO customers (
+                    shop_id, name, phone, email, address, city, state, pincode, gst_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                shop_id, customer_data['name'], customer_data.get('phone'),
+                customer_data.get('email'), customer_data.get('address'),
+                customer_data.get('city'), customer_data.get('state'),
+                customer_data.get('pincode'), customer_data.get('gst_number')
+            ))
+            conn.commit()
+            
+            customer_id = cursor.lastrowid
+            return cls.get_by_id(customer_id)
 
     @classmethod
     def get_by_id(cls, customer_id):
-        return cls.query.get(customer_id)
+        """Get customer by ID"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM customers WHERE id = ?', (customer_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                return cls(*row)
+            return None
 
     @classmethod
     def get_by_shop_id(cls, shop_id, limit=None, offset=None, search=None):
-        query = cls.query.filter_by(shop_id=shop_id)
-        
-        if search:
-            query = query.filter(
-                db.or_(
-                    cls.name.ilike(f'%{search}%'),
-                    cls.phone.ilike(f'%{search}%'),
-                    cls.email.ilike(f'%{search}%')
-                )
-            )
-        
-        query = query.order_by(cls.name.asc())
-        
-        if limit:
-            if offset:
-                query = query.offset(offset)
-            query = query.limit(limit)
-        
-        return query.all()
+        """Get customers by shop ID with optional search"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            query = 'SELECT * FROM customers WHERE shop_id = ?'
+            params = [shop_id]
+            
+            if search:
+                query += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)'
+                search_term = f'%{search}%'
+                params.extend([search_term, search_term, search_term])
+            
+            query += ' ORDER BY name ASC'
+            
+            if limit:
+                query += ' LIMIT ?'
+                params.append(limit)
+                if offset:
+                    query += ' OFFSET ?'
+                    params.append(offset)
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            return [cls(*row) for row in rows]
 
     @classmethod
     def search_by_phone(cls, shop_id, phone):
-        return cls.query.filter(
-            cls.shop_id == shop_id,
-            cls.phone.ilike(f'%{phone}%')
-        ).all()
+        """Search customer by phone number"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM customers 
+                WHERE shop_id = ? AND phone LIKE ?
+            ''', (shop_id, f'%{phone}%'))
+            rows = cursor.fetchall()
+            
+            return [cls(*row) for row in rows]
 
     def update(self, **kwargs):
+        """Update customer fields"""
         allowed_fields = [
             'name', 'phone', 'email', 'address', 'city', 
             'state', 'pincode', 'gst_number'
         ]
         
-        for field, value in kwargs.items():
-            if field in allowed_fields and hasattr(self, field):
-                setattr(self, field, value)
+        update_fields = []
+        values = []
         
-        db.session.commit()
-        return True
+        for field, value in kwargs.items():
+            if field in allowed_fields:
+                update_fields.append(f"{field} = ?")
+                values.append(value)
+        
+        if not update_fields:
+            return False
+        
+        values.append(self.id)
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f'''
+                UPDATE customers 
+                SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', values)
+            conn.commit()
+            return cursor.rowcount > 0
 
     def delete(self):
-        db.session.delete(self)
-        db.session.commit()
-        return True
+        """Delete customer"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM customers WHERE id = ?', (self.id,))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def get_invoices(self, limit=None):
-        from src.models.invoice import Invoice
-        query = Invoice.query.filter_by(customer_id=self.id).order_by(db.desc('invoice_date'))
-        if limit:
-            query = query.limit(limit)
-        return query.all()
+        """Get customer's invoices"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            query = '''
+                SELECT * FROM invoices 
+                WHERE customer_id = ? 
+                ORDER BY invoice_date DESC
+            '''
+            params = [self.id]
+            
+            if limit:
+                query += ' LIMIT ?'
+                params.append(limit)
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            from src.models.invoice import Invoice
+            return [Invoice(*row) for row in rows]
 
     def get_total_purchases(self):
-        from src.models.invoice import Invoice
-        result = db.session.query(db.func.coalesce(db.func.sum(Invoice.total_amount), 0)).filter(
-            Invoice.customer_id == self.id
-        ).scalar()
-        return float(result)
+        """Get total purchase amount for customer"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COALESCE(SUM(total_amount), 0) 
+                FROM invoices 
+                WHERE customer_id = ?
+            ''', (self.id,))
+            return float(cursor.fetchone()[0])
 
     def get_outstanding_balance(self):
-        from src.models.invoice import Invoice
-        result = db.session.query(db.func.coalesce(db.func.sum(Invoice.balance_amount), 0)).filter(
-            Invoice.customer_id == self.id,
-            Invoice.balance_amount > 0
-        ).scalar()
-        return float(result)
+        """Get outstanding balance for customer"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COALESCE(SUM(balance_amount), 0) 
+                FROM invoices 
+                WHERE customer_id = ? AND balance_amount > 0
+            ''', (self.id,))
+            return float(cursor.fetchone()[0])
 
     def get_recent_payments(self, limit=10):
-        from src.models.payment import InvoicePayment
-        from src.models.invoice import Invoice
-        
-        payments = db.session.query(
-            InvoicePayment, Invoice.invoice_number, Invoice.invoice_date
-        ).join(Invoice).filter(
-            Invoice.customer_id == self.id
-        ).order_by(
-            db.desc(InvoicePayment.payment_date),
-            db.desc(InvoicePayment.created_at)
-        ).limit(limit).all()
-        
-        result = []
-        for payment, invoice_number, invoice_date in payments:
-            result.append({
-                'id': payment.id,
-                'invoice_id': payment.invoice_id,
-                'amount': float(payment.amount),
-                'payment_method': payment.payment_method,
-                'payment_date': payment.payment_date,
-                'reference_number': payment.reference_number,
-                'notes': payment.notes,
-                'created_at': payment.created_at,
-                'updated_at': payment.updated_at,
-                'invoice_number': invoice_number,
-                'invoice_date': invoice_date
-            })
-        
-        return result
+        """Get recent payments for this customer"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT ip.*, i.invoice_number, i.invoice_date
+                FROM invoice_payments ip
+                JOIN invoices i ON ip.invoice_id = i.id
+                WHERE i.customer_id = ?
+                ORDER BY ip.payment_date DESC, ip.created_at DESC
+                LIMIT ?
+            ''', (self.id, limit))
+            
+            rows = cursor.fetchall()
+            payments = []
+            
+            for row in rows:
+                payments.append({
+                    'id': row[0],
+                    'invoice_id': row[1],
+                    'amount': float(row[2]),
+                    'payment_method': row[3],
+                    'payment_date': row[4],
+                    'reference_number': row[5],
+                    'notes': row[6],
+                    'created_at': row[7],
+                    'updated_at': row[8],
+                    'invoice_number': row[9],
+                    'invoice_date': row[10]
+                })
+            
+            return payments
 
     def to_dict(self):
-        def format_datetime(dt):
-            if dt is None:
-                return None
-            if isinstance(dt, str):
-                return dt
-            if hasattr(dt, 'isoformat'):
-                return dt.isoformat()
-            return str(dt)
-        
+        """Convert customer to dictionary"""
         return {
             'id': self.id,
             'shop_id': self.shop_id,
@@ -161,7 +220,7 @@ class Customer(db.Model):
             'state': self.state,
             'pincode': self.pincode,
             'gst_number': self.gst_number,
-            'created_at': format_datetime(self.created_at),
-            'updated_at': format_datetime(self.updated_at)
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
         }
 

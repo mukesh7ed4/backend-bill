@@ -1,13 +1,8 @@
 import sqlite3
 import os
 
-# Database path - Use persistent storage for production
-if os.getenv('FLASK_ENV') == 'production':
-    # Use /tmp for Render's persistent storage
-    DATABASE_PATH = '/tmp/billing_system.db'
-else:
-    # Use local path for development
-    DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'database', 'app.db')
+# Database path
+DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'database', 'app.db')
 
 def get_db():
     """Get database connection"""
