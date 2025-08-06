@@ -22,7 +22,6 @@ class Invoice(db.Model):
 
     # Relationships
     shop = db.relationship('Shop', backref=db.backref('invoices', lazy=True))
-    customer = db.relationship('Customer', backref=db.backref('invoices', lazy=True))
     items = db.relationship('InvoiceItem', backref='invoice', lazy=True, cascade='all, delete-orphan')
     payments = db.relationship('InvoicePayment', backref='invoice', lazy=True, cascade='all, delete-orphan')
 
@@ -400,7 +399,9 @@ class Invoice(db.Model):
             result['items'] = [item.to_dict() for item in self.items]
         
         if include_customer:
-            result['customer'] = self.customer.to_dict() if self.customer else None
+            from src.models.customer import Customer
+            customer = Customer.query.get(self.customer_id) if self.customer_id else None
+            result['customer'] = customer.to_dict() if customer else None
             
         if include_payments:
             result['payments'] = [payment.to_dict() for payment in self.payments]

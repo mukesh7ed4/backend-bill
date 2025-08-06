@@ -18,7 +18,6 @@ class Customer(db.Model):
 
     # Relationships
     shop = db.relationship('Shop', backref=db.backref('customers', lazy=True))
-    invoices = db.relationship('Invoice', backref='customer', lazy=True)
 
     @classmethod
     def create(cls, shop_id, customer_data):
@@ -89,7 +88,8 @@ class Customer(db.Model):
         return True
 
     def get_invoices(self, limit=None):
-        query = self.invoices.order_by(db.desc('invoice_date'))
+        from src.models.invoice import Invoice
+        query = Invoice.query.filter_by(customer_id=self.id).order_by(db.desc('invoice_date'))
         if limit:
             query = query.limit(limit)
         return query.all()
