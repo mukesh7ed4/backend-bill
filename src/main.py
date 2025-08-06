@@ -15,10 +15,11 @@ from src.routes.shop import shop_bp
 from src.routes.payment import payment_bp
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
-app.config['SECRET_KEY'] = 'billing-system-secret-key-2024'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'billing-system-secret-key-2024')
 
 # Enable CORS for all routes
-CORS(app, supports_credentials=True, origins=['http://localhost:5173', 'http://localhost:5175', 'http://localhost:3000'])
+cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5175,http://localhost:3000').split(',')
+CORS(app, supports_credentials=True, origins=cors_origins)
 
 # Initialize database
 init_db()
