@@ -1,5 +1,5 @@
 from datetime import datetime
-from src.models.user import db, User
+from src.database import db
 
 class Shop(db.Model):
     __tablename__ = 'shops'
@@ -52,6 +52,7 @@ class Shop(db.Model):
 
     @classmethod
     def get_all_paginated(cls, page=1, limit=10, search=''):
+        from src.models.user import User
         query = cls.query.join(User)
         
         if search:

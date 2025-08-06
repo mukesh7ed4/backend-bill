@@ -1,5 +1,5 @@
 from datetime import datetime
-from src.models.user import db
+from src.database import db
 
 class PaymentVerification(db.Model):
     __tablename__ = 'payment_verifications'
@@ -41,9 +41,10 @@ class PaymentVerification(db.Model):
 
     @classmethod
     def get_all_paginated(cls, page=1, limit=10, status=''):
+        from src.models.shop import Shop
         query = cls.query.join(Shop)
-            
-            if status:
+        
+        if status:
             query = query.filter(cls.status == status)
         
         verifications = query.order_by(cls.created_at.desc()).paginate(
@@ -66,13 +67,13 @@ class PaymentVerification(db.Model):
         return result
 
     def verify(self, admin_notes=''):
-            self.status = 'verified'
-            self.admin_notes = admin_notes
+        self.status = 'verified'
+        self.admin_notes = admin_notes
         db.session.commit()
 
     def reject(self, admin_notes=''):
-            self.status = 'rejected'
-            self.admin_notes = admin_notes
+        self.status = 'rejected'
+        self.admin_notes = admin_notes
         db.session.commit()
 
     def to_dict(self):

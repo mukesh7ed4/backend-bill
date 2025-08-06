@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from src.models.user import db
+from src.database import db
 
 class Invoice(db.Model):
     __tablename__ = 'invoices'
@@ -29,19 +29,19 @@ class Invoice(db.Model):
     @classmethod
     def generate_invoice_number(cls, shop_id):
         count = cls.query.filter_by(shop_id=shop_id).count()
-            today = date.today()
-            return f"INV-{shop_id}-{today.strftime('%Y%m%d')}-{count + 1:04d}"
+        today = date.today()
+        return f"INV-{shop_id}-{today.strftime('%Y%m%d')}-{count + 1:04d}"
 
     @classmethod
     def create(cls, shop_id, invoice_data, items_data):
-            # Generate invoice number if not provided
-            invoice_number = invoice_data.get('invoice_number') or cls.generate_invoice_number(shop_id)
-            
-            # Calculate totals
+        # Generate invoice number if not provided
+        invoice_number = invoice_data.get('invoice_number') or cls.generate_invoice_number(shop_id)
+        
+        # Calculate totals
         subtotal = sum(float(item['quantity'] or 0) * float(item['unit_price'] or 0) for item in items_data)
         tax_amount = float(invoice_data.get('tax_amount', 0) or 0)
         discount_amount = float(invoice_data.get('discount_amount', 0) or 0)
-            total_amount = subtotal + tax_amount - discount_amount
+        total_amount = subtotal + tax_amount - discount_amount
         
         # Handle immediate payment if provided
         initial_payment = float(invoice_data.get('paid_amount', 0) or 0)
@@ -126,11 +126,12 @@ class Invoice(db.Model):
     @classmethod
     def get_by_shop_id(cls, shop_id, limit=None, offset=None, status=None, search=None, sort='latest', date_filter=None):
         query = cls.query.filter_by(shop_id=shop_id)
-            
-            if status:
+        
+        if status:
             query = query.filter_by(status=status)
-            
-            if search:
+        
+        if search:
+            from src.models.customer import Customer
             query = query.join(Customer).filter(
                 db.or_(
                     cls.invoice_number.ilike(f'%{search}%'),
@@ -163,9 +164,9 @@ class Invoice(db.Model):
             query = query.order_by(db.desc(cls.invoice_date))
         else:
             query = query.order_by(db.desc(cls.invoice_date))
-            
-            if limit:
-                if offset:
+        
+        if limit:
+            if offset:
                 query = query.offset(offset)
             query = query.limit(limit)
         
@@ -202,8 +203,8 @@ class Invoice(db.Model):
         
         if amount > self.balance_amount:
             raise Exception(f"Payment amount ({amount}) cannot exceed balance amount ({self.balance_amount})")
-            
-            # Create payment record
+        
+        # Create payment record
         payment = InvoicePayment(
             invoice_id=self.id,
             amount=amount,
@@ -214,32 +215,32 @@ class Invoice(db.Model):
         )
         
         db.session.add(payment)
-            
-            # Update invoice paid amount and balance
-            new_paid_amount = self.paid_amount + amount
-            new_balance_amount = self.total_amount - new_paid_amount
-            
+        
+        # Update invoice paid amount and balance
+        new_paid_amount = self.paid_amount + amount
+        new_balance_amount = self.total_amount - new_paid_amount
+        
         # Determine status based on balance and due date
-            if new_balance_amount <= 0:
-                new_status = 'paid'
-            elif new_paid_amount > 0:
-                new_status = 'partial'
-            else:
-                new_status = 'pending'
-            
+        if new_balance_amount <= 0:
+            new_status = 'paid'
+        elif new_paid_amount > 0:
+            new_status = 'partial'
+        else:
+            new_status = 'pending'
+        
         # Check if overdue
         if self.due_date and payment_date > self.due_date and new_balance_amount > 0:
             new_status = 'overdue'
         
-            self.paid_amount = new_paid_amount
-            self.balance_amount = new_balance_amount
-            self.status = new_status
-            
+        self.paid_amount = new_paid_amount
+        self.balance_amount = new_balance_amount
+        self.status = new_status
+        
         db.session.commit()
-            return True
+        return True
 
     def update_status(self, status):
-            self.status = status
+        self.status = status
         db.session.commit()
         return True
 
@@ -367,7 +368,7 @@ class Invoice(db.Model):
     def to_dict(self, include_items=False, include_customer=False, include_payments=False):
         def format_datetime(dt):
             if dt is None:
-            return None
+                return None
             if isinstance(dt, str):
                 return dt
             if hasattr(dt, 'isoformat'):

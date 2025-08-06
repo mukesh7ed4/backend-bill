@@ -1,5 +1,5 @@
 from datetime import datetime
-from src.models.user import db
+from src.database import db
 
 class Customer(db.Model):
     __tablename__ = 'customers'
@@ -44,8 +44,8 @@ class Customer(db.Model):
     @classmethod
     def get_by_shop_id(cls, shop_id, limit=None, offset=None, search=None):
         query = cls.query.filter_by(shop_id=shop_id)
-            
-            if search:
+        
+        if search:
             query = query.filter(
                 db.or_(
                     cls.name.ilike(f'%{search}%'),
@@ -55,12 +55,12 @@ class Customer(db.Model):
             )
         
         query = query.order_by(cls.name.asc())
-            
-            if limit:
-                if offset:
+        
+        if limit:
+            if offset:
                 query = query.offset(offset)
             query = query.limit(limit)
-            
+        
         return query.all()
 
     @classmethod
@@ -90,7 +90,7 @@ class Customer(db.Model):
 
     def get_invoices(self, limit=None):
         query = self.invoices.order_by(db.desc('invoice_date'))
-            if limit:
+        if limit:
             query = query.limit(limit)
         return query.all()
 

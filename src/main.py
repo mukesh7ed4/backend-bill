@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
-from src.models.user import db, User
+from src.database import db
+from src.models.user import User
 from src.models.shop import Shop
 from src.models.customer import Customer
 from src.models.product import Product

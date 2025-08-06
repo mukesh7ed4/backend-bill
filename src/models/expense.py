@@ -1,5 +1,5 @@
 from datetime import datetime
-from src.models.user import db
+from src.database import db
 
 class Expense(db.Model):
     __tablename__ = 'expenses'
