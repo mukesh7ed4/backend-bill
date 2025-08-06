@@ -1,6 +1,6 @@
 import sqlite3
 from datetime import datetime
-from src.database_sqlite import get_db_connection
+from src.database_postgresql import get_db_connection
 
 class Shop:
     def __init__(self, id=None, user_id=None, shop_name=None, owner_name=None, 

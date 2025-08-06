@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
 from src.models.user import db
-from src.database_sqlite import init_db
+from src.database_postgresql import init_db
 
 # Import routes
 from src.routes.auth import auth_bp

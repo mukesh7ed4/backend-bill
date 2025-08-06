@@ -1,6 +1,6 @@
 import sqlite3
 from datetime import datetime, date
-from src.database_sqlite import get_db_connection
+from src.database_postgresql import get_db_connection
 
 class Invoice:
     def __init__(self, id=None, shop_id=None, customer_id=None, invoice_number=None,

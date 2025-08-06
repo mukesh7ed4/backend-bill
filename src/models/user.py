@@ -1,7 +1,7 @@
-import sqlite3
+import psycopg2
 import bcrypt
 from datetime import datetime
-from src.database_sqlite import get_db_connection
+from src.database_postgresql import get_db_connection
 
 # Initialize database connection for SQLAlchemy-like usage
 db = None
@@ -33,18 +33,19 @@ class User:
             
             cursor.execute('''
                 INSERT INTO users (username, email, password_hash, role, is_active, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             ''', (
                 user_data['username'], user_data['email'], password_hash,
                 user_data.get('role', 'shop_user'), True, datetime.now(), datetime.now()
             ))
             
-            user_id = cursor.lastrowid
+            user_id = cursor.fetchone()[0]
             conn.commit()
             
             return cls.get_by_id(user_id)
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -57,7 +58,7 @@ class User:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+            cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))
             row = cursor.fetchone()
             
             if row:
@@ -76,14 +77,14 @@ class User:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+            cursor.execute('SELECT * FROM users WHERE username = %s', (username,))
             row = cursor.fetchone()
             
             if row:
                 return cls(*row)
             return None
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -95,14 +96,14 @@ class User:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+            cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
             row = cursor.fetchone()
             
             if row:
                 return cls(*row)
             return None
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -133,7 +134,7 @@ class User:
             cursor.execute('SELECT COUNT(*) FROM users')
             return cursor.fetchone()[0]
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             raise Exception(f"Database error: {e}")
         finally:
             conn.close()
@@ -174,14 +175,14 @@ class User:
             
             cursor.execute('''
                 UPDATE users 
-                SET password_hash = ?, updated_at = ?
-                WHERE id = ?
+                SET password_hash = %s, updated_at = %s
+                WHERE id = %s
             ''', (password_hash, datetime.now(), self.id))
             
             conn.commit()
             self.password_hash = password_hash
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
@@ -195,8 +196,8 @@ class User:
         try:
             cursor.execute('''
                 UPDATE users 
-                SET username = ?, email = ?, updated_at = ?
-                WHERE id = ?
+                SET username = %s, email = %s, updated_at = %s
+                WHERE id = %s
             ''', (
                 user_data.get('username', self.username),
                 user_data.get('email', self.email),
@@ -210,7 +211,7 @@ class User:
             self.username = user_data.get('username', self.username)
             self.email = user_data.get('email', self.email)
             
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             conn.rollback()
             raise Exception(f"Database error: {e}")
         finally:
