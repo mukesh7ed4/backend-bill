@@ -24,6 +24,10 @@ def login():
         session['user_id'] = user.id
         session['user_role'] = user.role
         
+        # Debug logging
+        print(f"Login successful - User ID: {user.id}, Role: {user.role}")
+        print(f"Session data: {dict(session)}")
+        
         # Get shop data if user is shop_user
         shop = None
         if user.role == 'shop_user':
@@ -97,6 +101,12 @@ def get_current_user():
     """Get current user information"""
     try:
         user_id = session.get('user_id')
+        user_role = session.get('user_role')
+        
+        # Debug logging
+        print(f"/me endpoint - User ID: {user_id}, Role: {user_role}")
+        print(f"Session data in /me: {dict(session)}")
+        
         if not user_id:
             return jsonify({'error': 'Not authenticated'}), 401
         
@@ -164,6 +174,11 @@ def require_admin(f):
     def decorated_function(*args, **kwargs):
         user_id = session.get('user_id')
         user_role = session.get('user_role')
+        
+        # Debug logging
+        print(f"Admin check - User ID: {user_id}, Role: {user_role}")
+        print(f"Session data in admin check: {dict(session)}")
+        
         if not user_id or user_role != 'admin':
             return jsonify({'error': 'Admin access required'}), 403
         return f(*args, **kwargs)

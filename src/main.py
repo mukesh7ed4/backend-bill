@@ -17,6 +17,11 @@ from src.routes.payment import payment_bp
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'billing-system-secret-key-2024')
 
+# Session configuration for cross-origin requests
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None' if os.getenv('FLASK_ENV') == 'production' else 'Lax'
+
 # Enable CORS for all routes
 cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5175,http://localhost:3000').split(',')
 CORS(app, supports_credentials=True, origins=cors_origins)
